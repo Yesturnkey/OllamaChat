@@ -28,10 +28,9 @@ This project is built with the following modern technologies:
 
 ## Screenshots
 
-(Add some screenshots of your application here)
+Here's a sneak peek of OllamaChat in action:
 
-![Screenshot 1](...)
-![Screenshot 2](...)
+![OllamaChat Demo](./public/images/demo.png)
 
 ## Prerequisites
 
