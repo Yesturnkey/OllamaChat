@@ -14,7 +14,7 @@
 - 易於設定和部署
 - 開源且可擴展
 
-## 技術棧
+## 相關技術
 
 本專案採用以下現代技術建構：
 
@@ -28,11 +28,35 @@
 
 ## 螢幕截圖
 
-OllamaChat 的運作預覽：
+以下是 OllamaChat 主要功能的實際操作展示：
 
-![OllamaChat 範例](./public/images/demo.png)
+### 1. 模型切換
 
-## 先決條件
+輕鬆切換不同的 Ollama 模型，體驗各種 AI 模型的獨特能力：
+
+![模型切換](./public/images/model-switching.png)
+
+### 2. 文字對話
+
+與 AI 進行流暢的文字對話，支援 Markdown 格式顯示：
+
+![文字對話](./public/images/text-chat.png)
+
+### 3. 圖片對話
+
+上傳圖片並與 AI 討論圖片內容，支援多模態對話功能：
+
+![圖片對話](./public/images/image-chat.png)
+
+### 4. RAG 檢索增強生成
+
+結合文件檢索與生成技術，提供更精準且相關的回答：
+
+![RAG 功能](./public/images/rag-demo1.png)
+
+![RAG 功能](./public/images/rag-demo2.png)
+
+## 環境需求
 
 - Node.js (版本 20 或更高)
 - pnpm (或 npm/yarn/bun)
@@ -43,8 +67,8 @@ OllamaChat 的運作預覽：
 1.  複製儲存庫：
 
     ```bash
-    git clone https://github.com/your-username/ollamachat.git
-    cd ollamachat
+    git clone https://github.com/Yesturnkey/OllamaChat.git
+    cd OllamaChat
     ```
 
 2.  安裝依賴項：

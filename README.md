@@ -28,9 +28,33 @@ This project is built with the following modern technologies:
 
 ## Screenshots
 
-Here's a sneak peek of OllamaChat in action:
+Here's a showcase of OllamaChat's main features in action:
 
-![OllamaChat Demo](./public/images/demo.png)
+### 1. Model Switching
+
+Easily switch between different Ollama models and experience their unique capabilities:
+
+![Model Switching](./public/images/model-switching.png)
+
+### 2. Text Chat
+
+Engage in smooth text conversations with AI, supporting Markdown format display:
+
+![Text Chat](./public/images/text-chat.png)
+
+### 3. Image Chat
+
+Upload images and discuss their content with AI, supporting multimodal conversations:
+
+![Image Chat](./public/images/image-chat.png)
+
+### 4. RAG (Retrieval-Augmented Generation)
+
+Combine document retrieval with generation for more accurate and relevant responses:
+
+![RAG Feature](./public/images/rag-demo1.png)
+
+![RAG Feature](./public/images/rag-demo2.png)
 
 ## Prerequisites
 
@@ -43,8 +67,8 @@ Here's a sneak peek of OllamaChat in action:
 1.  Clone the repository:
 
     ```bash
-    git clone https://github.com/your-username/ollamachat.git
-    cd ollamachat
+    git clone https://github.com/Yesturnkey/OllamaChat.git
+    cd OllamaChat
     ```
 
 2.  Install the dependencies:

@@ -2,10 +2,13 @@ import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { fetchModels } from "@/app/redux/modelSlice";
 import axios from "axios";
 
-interface FileInfo {
+// 新增可序列化的檔案資料介面
+export interface FileData {
   name: string;
   type: string;
   size: number;
+  content: string; // base64 編碼的檔案內容
+  lastModified: number;
 }
 
 export interface Message {
@@ -14,7 +17,7 @@ export interface Message {
   content: string;
   timestamp: string;
   isStreaming?: boolean;
-  files?: FileInfo[];
+  files?: FileData[]; // 改為使用 FileData 以包含 content 屬性
   isFileList?: boolean;
 }
 export interface Chat {
@@ -53,7 +56,7 @@ const chatSlice = createSlice({
     chats: initialChats,
     currentChatId: initialChats[0].id,
     isWaiting: false,
-    uploadedFiles: [] as File[],
+    uploadedFiles: [] as FileData[], // 改為使用 FileData 而不是 File
   },
   reducers: {
     setCurrentChat: (state, action: PayloadAction<string>) => {
@@ -107,7 +110,7 @@ const chatSlice = createSlice({
     setIsWaiting: (state, action: PayloadAction<boolean>) => {
       state.isWaiting = action.payload;
     },
-    addUploadedFiles: (state, action: PayloadAction<File[]>) => {
+    addUploadedFiles: (state, action: PayloadAction<FileData[]>) => {
       state.uploadedFiles.push(...action.payload);
     },
     removeUploadedFile: (state, action: PayloadAction<string>) => {

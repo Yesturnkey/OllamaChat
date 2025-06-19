@@ -1,223 +1,176 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ChatOllama } from "@langchain/ollama";
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { RunnableSequence } from "@langchain/core/runnables";
+import {
+  HumanMessage,
+  AIMessage,
+  SystemMessage,
+  BaseMessage,
+} from "@langchain/core/messages";
 
-// 處理與過濾字符內容的函數
-function sanitizeContent(content: string): string {
-  // 過濾不可打印字符
-  return content.replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, "");
+// 定義多模態內容類型
+interface TextContent {
+  type: "text";
+  text: string;
 }
 
-// 處理模板中的特殊字符，防止 LangChain 模板解析錯誤
-function escapeTemplateChars(text: string): string {
-  if (!text) return "";
-
-  // 1. 過濾不可打印字符
-  let result = text.replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, "");
-
-  // 2. 替換可能導致模板解析錯誤的字符
-  // 將單獨的 { 和 } 轉義為 {{ 和 }}
-  result = result.replace(/[{}]/g, (match) => {
-    return match === "{" ? "{{" : "}}";
-  });
-
-  return result;
+interface ImageContent {
+  type: "image_url";
+  image_url: string;
 }
+
+type MessageContent = string | (TextContent | ImageContent)[];
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { model, messages, stream = true, temperature = 0.7 } = body;
+    const { model, messages, stream = true, temperature = 0.7, images } = body;
 
-    // 確保 messages 是陣列格式
-    const formattedMessages = Array.isArray(messages)
-      ? messages
-      : [
-          {
-            role: "user",
-            content: messages,
-          },
-        ];
-
-    // 過濾和轉義消息內容中的特殊字符
-    const sanitizedMessages = formattedMessages.map((msg) => ({
-      ...msg,
-      content: escapeTemplateChars(msg.content),
-    }));
-
-    console.log("發送給 LangChain-Ollama 的請求內容:", {
+    console.log("聊天請求:", {
       model,
-      messages: formattedMessages.length,
+      messageCount: messages ? messages.length : 0,
+      hasImages: images ? images.length : 0,
       stream,
       temperature,
     });
 
-    // 建立 Ollama 聊天模型
-    const chatModel = new ChatOllama({
+    // 確保有提供模型和消息
+    if (!model) {
+      return NextResponse.json(
+        { error: "缺少必要參數：model" },
+        { status: 400 }
+      );
+    }
+
+    // 初始化 ChatOllama
+    const llm = new ChatOllama({
+      baseUrl: process.env.NEXT_PUBLIC_OLLAMA_API_URL,
       model: model,
-      baseUrl: process.env.NEXT_PUBLIC_OLLAMA_API_URL, // Ollama 服務地址
       temperature: temperature,
     });
 
+    // 轉換消息格式
+    const langchainMessages: BaseMessage[] = [];
+
+    if (messages && Array.isArray(messages)) {
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        const content = msg.content || "";
+
+        // 檢查是否為最後一條用戶消息且有圖片
+        const isLastUserMessage =
+          i === messages.length - 1 && msg.role === "user";
+        const shouldAddImages =
+          isLastUserMessage && images && images.length > 0;
+
+        if (shouldAddImages) {
+          // 為最後一條用戶消息添加圖片支援
+          const contentParts: (TextContent | ImageContent)[] = [
+            {
+              type: "text",
+              text: content,
+            },
+          ];
+
+          // 添加圖片
+          for (const imageData of images) {
+            contentParts.push({
+              type: "image_url",
+              image_url: imageData, // 應該是 data:image/jpeg;base64,... 格式
+            });
+          }
+
+          langchainMessages.push(
+            new HumanMessage({
+              content: contentParts as MessageContent,
+            })
+          );
+        } else {
+          // 普通消息處理
+          switch (msg.role) {
+            case "system":
+              langchainMessages.push(new SystemMessage(content));
+              break;
+            case "user":
+              langchainMessages.push(new HumanMessage(content));
+              break;
+            case "assistant":
+              langchainMessages.push(new AIMessage(content));
+              break;
+            default:
+              console.warn(`未知的消息角色: ${msg.role}`);
+              break;
+          }
+        }
+      }
+    }
+
     if (stream) {
-      // 處理流式響應
-      const stream = new ReadableStream({
+      // 流式響應
+      const stream = await llm.stream(langchainMessages);
+
+      const encoder = new TextEncoder();
+      const readableStream = new ReadableStream({
         async start(controller) {
           try {
-            // 從歷史消息中創建提示
-            const chatHistory = sanitizedMessages.map((msg) => {
-              return {
-                role: msg.role,
-                content: msg.content,
+            for await (const chunk of stream) {
+              const data = {
+                message: {
+                  role: "assistant",
+                  content: chunk.content,
+                },
+                done: false,
               };
-            });
 
-            // 最後一條消息（通常是用戶的問題）
-            const lastMessage = chatHistory[chatHistory.length - 1];
-
-            // 移除最後一條消息，因為它將作為問題單獨傳遞
-            const history = chatHistory.slice(0, -1);
-
-            // 創建聊天提示模板
-            let promptTemplate;
-            if (history.length > 0) {
-              promptTemplate = ChatPromptTemplate.fromMessages([
-                ...history.map((msg) => ({
-                  role: msg.role === "user" ? "human" : "assistant",
-                  content: msg.content,
-                })),
-                ["human", lastMessage.content],
-              ]);
-            } else {
-              promptTemplate = ChatPromptTemplate.fromMessages([
-                ["human", lastMessage.content],
-              ]);
+              controller.enqueue(encoder.encode(JSON.stringify(data) + "\n"));
             }
 
-            // 創建 LangChain 流程
-            const chain = RunnableSequence.from([
-              promptTemplate,
-              chatModel,
-              new StringOutputParser(),
-            ]);
-
-            // 啟動流式生成
-            const streamingResponse = await chain.stream({});
-
-            for await (const chunk of streamingResponse) {
-              try {
-                // 過濾內容
-                const sanitizedChunk = sanitizeContent(chunk);
-
-                // 封裝流式響應格式
-                const responseChunk = {
-                  message: {
-                    content: sanitizedChunk,
-                  },
-                };
-
-                controller.enqueue(
-                  new TextEncoder().encode(JSON.stringify(responseChunk) + "\n")
-                );
-              } catch (chunkError) {
-                console.error("處理響應塊時出錯:", chunkError);
-              }
-            }
-          } catch (error) {
-            console.error("流處理錯誤:", error);
-
-            // 發送錯誤訊息給客戶端
-            const errorResponse = {
+            // 發送完成信號
+            const finalData = {
               message: {
-                content:
-                  "處理您的請求時發生錯誤。文件內容可能包含不支援的格式或特殊字符。",
+                role: "assistant",
+                content: "",
               },
+              done: true,
             };
+
             controller.enqueue(
-              new TextEncoder().encode(JSON.stringify(errorResponse) + "\n")
+              encoder.encode(JSON.stringify(finalData) + "\n")
             );
 
             controller.close();
-          } finally {
-            controller.close();
+          } catch (error) {
+            console.error("流式響應錯誤:", error);
+            controller.error(error);
           }
         },
       });
 
-      return new Response(stream, {
+      return new Response(readableStream, {
         headers: {
-          "Content-Type": "text/event-stream",
+          "Content-Type": "text/plain; charset=utf-8",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
         },
       });
-    }
-
-    // 非流式處理
-    // 從歷史消息中創建提示
-    const chatHistory = sanitizedMessages.map((msg) => {
-      return {
-        role: msg.role,
-        content: msg.content,
-      };
-    });
-
-    // 最後一條消息（通常是用戶的問題）
-    const lastMessage = chatHistory[chatHistory.length - 1];
-
-    // 移除最後一條消息，因為它將作為問題單獨傳遞
-    const history = chatHistory.slice(0, -1);
-
-    // 創建聊天提示模板
-    let promptTemplate;
-    if (history.length > 0) {
-      promptTemplate = ChatPromptTemplate.fromMessages([
-        ...history.map((msg) => ({
-          role: msg.role === "user" ? "human" : "assistant",
-          content: msg.content,
-        })),
-        ["human", lastMessage.content],
-      ]);
     } else {
-      promptTemplate = ChatPromptTemplate.fromMessages([
-        ["human", lastMessage.content],
-      ]);
-    }
-
-    // 創建 LangChain 流程
-    const chain = RunnableSequence.from([
-      promptTemplate,
-      chatModel,
-      new StringOutputParser(),
-    ]);
-
-    try {
-      // 執行鏈並獲取響應
-      const response = await chain.invoke({});
-
-      // 過濾非流式回應中的內容
-      const sanitizedResponse = sanitizeContent(response);
+      // 非流式響應
+      const response = await llm.invoke(langchainMessages);
 
       return NextResponse.json({
         message: {
-          content: sanitizedResponse,
+          role: "assistant",
+          content: response.content,
         },
-      });
-    } catch (error) {
-      console.error("非流處理錯誤:", error);
-      return NextResponse.json({
-        message: {
-          content:
-            "處理您的請求時發生錯誤。文件內容可能包含不支援的格式或特殊字符。",
-        },
+        done: true,
       });
     }
   } catch (error) {
     console.error("聊天請求錯誤:", error);
     return NextResponse.json(
-      { error: "處理聊天請求時發生錯誤" },
+      {
+        error: "處理聊天請求時發生錯誤",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

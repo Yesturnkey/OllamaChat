@@ -96,7 +96,7 @@ const ChatMain = () => {
         </div>
 
         {/* 已上傳文件區域 */}
-        {uploadedFiles.length > 0 && <FileUploadArea />}
+        {/* {uploadedFiles.length > 0 && <FileUploadArea />} */}
 
         {/* 輸入區域 */}
         <InputArea />

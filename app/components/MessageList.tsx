@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useAppSelector } from "@/app/redux/hooks";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -10,6 +10,7 @@ import { formatTime } from "@/utils/date";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { materialDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import ImagePreviewDialog from "./ImagePreviewDialog";
 
 type MessageListProps = {
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
@@ -21,65 +22,93 @@ const MessageList = ({ messagesEndRef }: MessageListProps) => {
   const isWaiting = useAppSelector((state) => state.chat.isWaiting);
   const activeTab = useAppSelector((state) => state.ui.activeTab);
 
+  // 圖片預覽狀態
+  const [previewImage, setPreviewImage] = useState<{
+    src: string;
+    alt: string;
+    fileName: string;
+  } | null>(null);
+
+  // 檢查是否為圖片檔案
+  const isImageFile = (fileType: string) => {
+    return fileType.startsWith("image/");
+  };
+
+  // 處理圖片點擊
+  const handleImageClick = (imageSrc: string, fileName: string) => {
+    setPreviewImage({
+      src: imageSrc,
+      alt: fileName,
+      fileName: fileName,
+    });
+  };
+
+  // 關閉預覽
+  const handleClosePreview = () => {
+    setPreviewImage(null);
+  };
+
   // 獲取當前聊天
-  const currentChat =
-    chats.find((chat) => chat.id === currentChatId) || chats[0];
+  const currentChat = chats.find((chat) => chat.id === currentChatId);
+  const messages = currentChat?.messages || [];
 
   return (
-    <div className="space-y-2 min-h-[50vh]">
-      {currentChat.messages.map((message) => (
-        <div
-          key={message.id}
-          className={cn(
-            "flex",
-            message.role === "user" ? "justify-end" : "justify-start"
-          )}
-        >
-          <div className="flex items-start max-w-[80%]">
-            {message.role === "assistant" && (
-              <Avatar className="mr-2">
-                <AvatarFallback>
-                  <Bot className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
+    <>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={cn(
+              "flex gap-3 max-w-4xl",
+              message.role === "user" ? "ml-auto flex-row-reverse" : ""
             )}
+          >
+            <Avatar className="w-8 h-8 flex-shrink-0">
+              <AvatarFallback>
+                {message.role === "user" ? (
+                  <User className="h-4 w-4" />
+                ) : (
+                  <Bot className="h-4 w-4" />
+                )}
+              </AvatarFallback>
+            </Avatar>
 
-            <div>
+            <div
+              className={cn(
+                "flex flex-col space-y-2 max-w-xs lg:max-w-md xl:max-w-lg",
+                message.role === "user" ? "items-end" : "items-start"
+              )}
+            >
               <div
                 className={cn(
-                  "rounded-lg p-3",
+                  "rounded-lg px-3 py-2 text-sm",
                   message.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
                 )}
               >
-                {message.role === "assistant" ? (
-                  <div className=" prose dark:prose-invert prose-base ">
-                    <ReactMarkdown
-                      components={{
-                        code: ({ className, children }) => {
-                          const match = /language-(\w+)/.exec(className || "");
-                          return match ? (
-                            <SyntaxHighlighter
-                              // @ts-ignore - 處理類型問題
-                              style={materialDark}
-                              language={match[1]}
-                            >
-                              {String(children).replace(/\n$/, "")}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className}>{children}</code>
-                          );
-                        },
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
-                  </div>
-                ) : (
-                  <div className="whitespace-pre-wrap">{message.content}</div>
-                )}
-                {message.isStreaming && <TypingIndicator />}
+                <ReactMarkdown
+                  components={{
+                    code({ className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || "");
+                      return match ? (
+                        <SyntaxHighlighter
+                          style={materialDark as any}
+                          language={match[1]}
+                          PreTag="div"
+                        >
+                          {String(children).replace(/\n$/, "")}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
 
                 {/* 顯示上傳的文件 */}
                 {message.files && message.files.length > 0 && (
@@ -91,52 +120,75 @@ const MessageList = ({ messagesEndRef }: MessageListProps) => {
                         : "border-muted-foreground/30"
                     )}
                   >
-                    <div className="text-xs mb-1">上傳的文件：</div>
-                    <div className="flex flex-col gap-1">
+                    <div className="text-xs mb-2">附件：</div>
+                    <div className="flex flex-wrap gap-2">
                       {message.files.map((file, index) => (
-                        <div key={index} className="flex items-center text-sm">
-                          <FileText className="h-4 w-4 mr-1 flex-shrink-0" />
-                          <span className="truncate">{file.name}</span>
+                        <div key={index} className="relative">
+                          {isImageFile(file.type) ? (
+                            // 圖片預覽（在聊天記錄中顯示較小的版本）
+                            <div className="relative">
+                              <img
+                                src={file.content}
+                                alt={file.name}
+                                className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() =>
+                                  handleImageClick(file.content, file.name)
+                                }
+                              />
+                              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 rounded-b truncate">
+                                {file.name}
+                              </div>
+                            </div>
+                          ) : (
+                            // 文件圖標
+                            <div className="flex items-center gap-1 text-xs bg-background/50 rounded px-2 py-1">
+                              <FileText className="h-3 w-3" />
+                              <span className="truncate max-w-[100px]">
+                                {file.name}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {formatTime(message.timestamp.toString())}
+
+              <div className="text-xs text-muted-foreground">
+                {formatTime(message.timestamp)}
               </div>
             </div>
-
-            {message.role === "user" && (
-              <Avatar className="ml-2">
-                <AvatarFallback>
-                  <User className="h-4 w-4" />
-                </AvatarFallback>
-              </Avatar>
-            )}
           </div>
-        </div>
-      ))}
+        ))}
 
-      {/* 僅在沒有正在流式傳輸的消息時才顯示等待指示器 */}
-      {isWaiting && !currentChat.messages.some((m) => m.isStreaming) && (
-        <div className="flex justify-start">
-          <div className="flex items-start max-w-[80%]">
-            <Avatar className="mr-2">
+        {isWaiting && (
+          <div className="flex gap-3 max-w-4xl">
+            <Avatar className="w-8 h-8 flex-shrink-0">
               <AvatarFallback>
                 <Bot className="h-4 w-4" />
               </AvatarFallback>
             </Avatar>
-            <div className="bg-muted rounded-lg p-3">
-              <TypingIndicator />
+            <div className="flex flex-col space-y-2">
+              <div className="rounded-lg px-3 py-2 bg-muted">
+                <TypingIndicator />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div ref={messagesEndRef} />
-    </div>
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* 圖片預覽 Dialog */}
+      <ImagePreviewDialog
+        isOpen={previewImage !== null}
+        onClose={handleClosePreview}
+        imageSrc={previewImage?.src || ""}
+        imageAlt={previewImage?.alt || ""}
+        fileName={previewImage?.fileName || ""}
+      />
+    </>
   );
 };
 
