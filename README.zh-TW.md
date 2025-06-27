@@ -62,6 +62,34 @@
 - pnpm (或 npm/yarn/bun)
 - Ollama 已在本機安裝並執行。有關安裝說明，請參閱 [ollama.com](https://ollama.com)。
 
+## 推薦模型
+
+為了獲得 OllamaChat 的最佳體驗，我們建議下載以下模型：
+
+### 對話模型
+
+- **DeepSeek-R1**: 開源推理模型系列，非常適合複雜的推理任務。
+
+  ```bash
+  ollama pull deepseek-r1
+  ```
+
+- **Gemma 3**: 目前最強大的單 GPU 模型，具備視覺功能。
+  ```bash
+  ollama pull gemma3
+  ```
+
+### RAG (檢索增強生成) 支援
+
+- **nomic-embed-text**: **RAG 功能必需模型**。這是一個具有大型語境視窗的高性能開源嵌入模型，對於文件索引和檢索至關重要。
+  ```bash
+  ollama pull nomic-embed-text
+  ```
+
+> **注意**: 如果您想使用 OllamaChat 的 RAG 功能，`nomic-embed-text` 模型是必須的。
+
+如需更多模型和詳細資訊，請造訪 [ollama.com/search](https://ollama.com/search) 瀏覽完整的可用模型目錄。
+
 ## 安裝
 
 1.  複製儲存庫：

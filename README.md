@@ -62,6 +62,34 @@ Combine document retrieval with generation for more accurate and relevant respon
 - pnpm (or npm/yarn/bun)
 - Ollama installed and running locally. See [ollama.com](https://ollama.com) for installation instructions.
 
+## Recommended Models
+
+To get the best experience with OllamaChat, we recommend downloading the following models:
+
+### Chat Models
+
+- **DeepSeek-R1**: A family of open reasoning models with performance approaching that of leading models. Great for complex reasoning tasks.
+
+  ```bash
+  ollama pull deepseek-r1
+  ```
+
+- **Gemma 3**: The current, most capable model that runs on a single GPU with vision capabilities.
+  ```bash
+  ollama pull gemma3
+  ```
+
+### RAG (Retrieval-Augmented Generation) Support
+
+- **nomic-embed-text**: **Required for RAG functionality**. This high-performing open embedding model with a large token context window is essential for document indexing and retrieval.
+  ```bash
+  ollama pull nomic-embed-text
+  ```
+
+> **Note**: The `nomic-embed-text` model is mandatory if you want to use the RAG features in OllamaChat.
+
+For more models and detailed information, visit [ollama.com/search](https://ollama.com/search) to explore the full catalog of available models.
+
 ## Installation
 
 1.  Clone the repository:
