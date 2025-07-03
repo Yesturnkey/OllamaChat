@@ -92,17 +92,31 @@ const MCPToolsTab = () => {
     isConnecting: selectedServer?.connecting,
   });
 
-  // 處理服務器連接
+  // 處理服務器連接/斷開連接
   const handleConnectServer = async (serverId: string) => {
     try {
       const server = servers.find((s) => s.id === serverId);
       if (!server) {
         throw new Error("找不到服務器");
       }
+
+      const isConnected = server.connected;
       await dispatch(connectServer(server)).unwrap();
-      toast.success("服務器連接成功");
+
+      if (isConnected) {
+        toast.success("服務器連接已斷開");
+      } else {
+        toast.success("服務器連接成功");
+      }
     } catch (error) {
-      toast.error(`連接失敗: ${error}`);
+      const server = servers.find((s) => s.id === serverId);
+      const isConnected = server?.connected;
+
+      if (isConnected) {
+        toast.error(`斷開連接失敗: ${error}`);
+      } else {
+        toast.error(`連接失敗: ${error}`);
+      }
     }
   };
 

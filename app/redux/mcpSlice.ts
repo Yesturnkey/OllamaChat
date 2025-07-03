@@ -197,32 +197,59 @@ export const connectServer = createAsyncThunk(
   "mcp/connectServer",
   async (server: MCPServer, { rejectWithValue }) => {
     try {
-      const response = await fetch("/api/mcp/servers/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // 檢查服務器是否已連接
+      if (server.connected) {
+        // 如果已連接，執行斷開連接
+        console.log(`正在斷開服務器連接: ${server.name}`);
+
+        // 調用斷開連接 API
+        const response = await fetch("/api/mcp/servers/disconnect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ serverId: server.id }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          return rejectWithValue(error.message || "服務器斷開連接失敗");
+        }
+
+        return { serverId: server.id, disconnect: true };
+      } else {
+        // 如果未連接，執行連接操作
+        console.log(`正在連接服務器: ${server.name}`);
+
+        const response = await fetch("/api/mcp/servers/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            serverId: server.id,
+            serverConfig: {
+              type: server.type,
+              command: server.command,
+              args: server.args,
+              url: server.url,
+              env: server.env,
+              headers: server.headers,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          return rejectWithValue(error.message || "服務器連接失敗");
+        }
+
+        const result = await response.json();
+        return {
           serverId: server.id,
-          serverConfig: {
-            type: server.type,
-            command: server.command,
-            args: server.args,
-            url: server.url,
-            env: server.env,
-            headers: server.headers,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        return rejectWithValue(error.message || "服務器連接失敗");
+          tools: result.tools || [],
+          connect: true,
+        };
       }
-
-      const result = await response.json();
-      return { serverId: server.id, tools: result.tools || [] };
     } catch (error) {
       return rejectWithValue(
-        error instanceof Error ? error.message : "服務器連接失敗"
+        error instanceof Error ? error.message : "服務器操作失敗"
       );
     }
   }
@@ -443,13 +470,25 @@ const mcpSlice = createSlice({
         }
       })
       .addCase(connectServer.fulfilled, (state, action) => {
-        const { serverId, tools } = action.payload;
+        const { serverId, tools, connect, disconnect } = action.payload;
         const server = state.servers.find((s) => s.id === serverId);
         if (server) {
           server.connecting = false;
-          server.connected = true;
-          server.tools = tools.map((tool: any) => ({ ...tool, enabled: true }));
-          server.lastConnected = new Date().toISOString();
+
+          if (disconnect) {
+            // 斷開連接
+            server.connected = false;
+            server.tools = [];
+            server.error = undefined;
+          } else if (connect) {
+            // 連接成功
+            server.connected = true;
+            server.tools = tools
+              ? tools.map((tool: any) => ({ ...tool, enabled: true }))
+              : [];
+            server.lastConnected = new Date().toISOString();
+          }
+
           // 更新統計
           state.stats.connectedServers = state.servers.filter(
             (s) => s.connected
@@ -467,7 +506,6 @@ const mcpSlice = createSlice({
         const server = state.servers.find((s) => s.id === serverId);
         if (server) {
           server.connecting = false;
-          server.connected = false;
           server.error = action.payload as string;
         }
       });
