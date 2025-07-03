@@ -4,8 +4,10 @@ import React, { useState, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/redux/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Send, Upload } from "lucide-react";
+import { Send, Upload, Wrench } from "lucide-react";
 import {
   addMessage,
   addUploadedFiles,
@@ -23,9 +25,35 @@ const InputArea = () => {
   const uploadedFiles = useAppSelector((state) => state.chat.uploadedFiles);
   const selectedModel = useAppSelector((state) => state.model.selectedModel);
   const chats = useAppSelector((state) => state.chat.chats);
+  const models = useAppSelector((state) => state.model.models);
+
+  // 獲取 MCP 工具信息
+  const mcpServers = useAppSelector((state) => state.mcp.servers);
+  const connectedServers = mcpServers.filter((server) => server.connected);
+  const availableTools = connectedServers.flatMap((server) =>
+    server.tools
+      .filter((tool) => tool.enabled)
+      .map((tool) => ({
+        ...tool,
+        serverId: server.id, // 添加服務器ID
+        serverConfig: {
+          type: server.type,
+          command: server.command,
+          args: server.args,
+          env: server.env,
+          headers: server.headers,
+          url: server.url,
+        }, // 添加完整的服務器配置
+      }))
+  );
 
   const [inputMessage, setInputMessage] = useState<string>("");
+  const [enableMCPTools, setEnableMCPTools] = useState<boolean>(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 獲取當前選中模型的能力
+  const currentModel = models.find((model) => model.id === selectedModel);
+  const supportsImages = currentModel?.capabilities?.supportsImages || false;
 
   // 定義允許的文件格式
   const ALLOWED_FILE_TYPES = [
@@ -38,14 +66,18 @@ const InputArea = () => {
     "text/plain",
     "application/xml",
     "text/xml",
-    // 新增圖片格式
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "image/bmp",
-    "image/svg+xml",
+    // 圖片格式（只有在模型支援時才允許）
+    ...(supportsImages
+      ? [
+          "image/jpeg",
+          "image/jpg",
+          "image/png",
+          "image/gif",
+          "image/webp",
+          "image/bmp",
+          "image/svg+xml",
+        ]
+      : []),
   ];
 
   // 定義檔案大小限制（20MB）
@@ -97,14 +129,10 @@ const InputArea = () => {
       "json",
       "txt",
       "xml",
-      // 新增圖片副檔名
-      "jpg",
-      "jpeg",
-      "png",
-      "gif",
-      "webp",
-      "bmp",
-      "svg",
+      // 圖片副檔名（只有在模型支援時才允許）
+      ...(supportsImages
+        ? ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"]
+        : []),
     ];
     return supportedExtensions.includes(extension || "");
   };
@@ -236,6 +264,8 @@ const InputArea = () => {
 
         let accumulatedContent = "";
         let isStreamComplete = false;
+        let toolCallsInfo: any = null;
+        let usedToolsInfo: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -245,33 +275,51 @@ const InputArea = () => {
           const lines = chunk.split("\n").filter((line) => line.trim());
 
           for (const line of lines) {
-            try {
-              const data = JSON.parse(line);
-              if (data.message && data.message.content) {
-                accumulatedContent += data.message.content;
-
-                dispatch(
-                  updateMessage({
-                    chatId: currentChatId,
-                    messageId: assistantMessageId,
-                    content: accumulatedContent,
-                    isStreaming: !data.done,
-                  })
-                );
-              }
-
-              // 檢查是否完成
-              if (data.done) {
-                dispatch(
-                  updateMessage({
-                    chatId: currentChatId,
-                    messageId: assistantMessageId,
-                    content: accumulatedContent,
-                    isStreaming: false,
-                  })
-                );
+            // 跳過空行和 data: 前綴
+            if (!line.startsWith("data: ") || line === "data: [DONE]") {
+              if (line === "data: [DONE]") {
                 isStreamComplete = true;
                 break;
+              }
+              continue;
+            }
+
+            try {
+              const jsonStr = line.slice(6); // 移除 "data: " 前綴
+              const data = JSON.parse(jsonStr);
+
+              if (data.type === "tool_calls") {
+                // 處理工具調用信息
+                toolCallsInfo = data.tool_calls;
+                usedToolsInfo = data.used_tools;
+
+                console.log("收到工具調用信息:", toolCallsInfo);
+
+                // 更新消息顯示工具調用狀態
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: "正在執行工具調用...",
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                    usedTools: usedToolsInfo,
+                  })
+                );
+              } else if (data.type === "content") {
+                // 處理內容更新
+                accumulatedContent += data.content;
+
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: accumulatedContent,
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                    usedTools: usedToolsInfo,
+                  })
+                );
               }
             } catch (parseError) {
               console.warn("解析響應行失敗:", line, parseError);
@@ -280,6 +328,18 @@ const InputArea = () => {
 
           if (isStreamComplete) break;
         }
+
+        // 確保最終狀態更新
+        dispatch(
+          updateMessage({
+            chatId: currentChatId,
+            messageId: assistantMessageId,
+            content: accumulatedContent || "處理完成",
+            isStreaming: false,
+            toolCalls: toolCallsInfo,
+            usedTools: usedToolsInfo,
+          })
+        );
 
         // 確保流式響應完成後清理狀態
         dispatch(setIsWaiting(false));
@@ -436,6 +496,8 @@ const InputArea = () => {
 
         let accumulatedContent = "";
         let isStreamComplete = false;
+        let toolCallsInfo: any = null;
+        let usedToolsInfo: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -445,33 +507,51 @@ const InputArea = () => {
           const lines = chunk.split("\n").filter((line) => line.trim());
 
           for (const line of lines) {
-            try {
-              const data = JSON.parse(line);
-              if (data.message && data.message.content) {
-                accumulatedContent += data.message.content;
-
-                dispatch(
-                  updateMessage({
-                    chatId: currentChatId,
-                    messageId: assistantMessageId,
-                    content: accumulatedContent,
-                    isStreaming: !data.done,
-                  })
-                );
-              }
-
-              // 檢查是否完成
-              if (data.done) {
-                dispatch(
-                  updateMessage({
-                    chatId: currentChatId,
-                    messageId: assistantMessageId,
-                    content: accumulatedContent,
-                    isStreaming: false,
-                  })
-                );
+            // 跳過空行和 data: 前綴
+            if (!line.startsWith("data: ") || line === "data: [DONE]") {
+              if (line === "data: [DONE]") {
                 isStreamComplete = true;
                 break;
+              }
+              continue;
+            }
+
+            try {
+              const jsonStr = line.slice(6); // 移除 "data: " 前綴
+              const data = JSON.parse(jsonStr);
+
+              if (data.type === "tool_calls") {
+                // 處理工具調用信息
+                toolCallsInfo = data.tool_calls;
+                usedToolsInfo = data.used_tools;
+
+                console.log("收到工具調用信息:", toolCallsInfo);
+
+                // 更新消息顯示工具調用狀態
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: "正在執行工具調用...",
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                    usedTools: usedToolsInfo,
+                  })
+                );
+              } else if (data.type === "content") {
+                // 處理內容更新
+                accumulatedContent += data.content;
+
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: accumulatedContent,
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                    usedTools: usedToolsInfo,
+                  })
+                );
               }
             } catch (parseError) {
               console.warn("解析響應行失敗:", line, parseError);
@@ -481,10 +561,22 @@ const InputArea = () => {
           if (isStreamComplete) break;
         }
 
+        // 確保最終狀態更新
+        dispatch(
+          updateMessage({
+            chatId: currentChatId,
+            messageId: assistantMessageId,
+            content: accumulatedContent || "處理完成",
+            isStreaming: false,
+            toolCalls: toolCallsInfo,
+            usedTools: usedToolsInfo,
+          })
+        );
+
         // 確保流式響應完成後清理狀態
         dispatch(setIsWaiting(false));
       } else {
-        // 沒有文件，使用普通聊天
+        // 沒有文件，使用帶工具的聊天
         // 提前創建助手消息
         const initialAssistantMessage = {
           id: assistantMessageId,
@@ -521,17 +613,29 @@ const InputArea = () => {
           content: currentMessage,
         });
 
-        // 使用 Ollama API 進行回答
-        const response = await fetch("/api/ollama/chat", {
+        // 根據是否啟用 MCP 工具選擇不同的 API
+        const apiEndpoint = enableMCPTools
+          ? "/api/ollama/chat-with-tools"
+          : "/api/ollama/chat";
+        const requestBody = enableMCPTools
+          ? {
+              model: selectedModel,
+              messages: chatHistory,
+              enableTools: enableMCPTools,
+              availableTools: availableTools, // 傳遞可用工具
+            }
+          : {
+              model: selectedModel,
+              messages: chatHistory,
+              stream: true,
+            };
+
+        const response = await fetch(apiEndpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            model: selectedModel,
-            messages: chatHistory,
-            stream: true,
-          }),
+          body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
@@ -548,6 +652,8 @@ const InputArea = () => {
 
         let accumulatedContent = "";
         let isStreamComplete = false;
+        let toolCallsInfo: any = null;
+        let usedToolsInfo: any = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -557,33 +663,51 @@ const InputArea = () => {
           const lines = chunk.split("\n").filter((line) => line.trim());
 
           for (const line of lines) {
-            try {
-              const data = JSON.parse(line);
-              if (data.message && data.message.content) {
-                accumulatedContent += data.message.content;
-
-                dispatch(
-                  updateMessage({
-                    chatId: currentChatId,
-                    messageId: assistantMessageId,
-                    content: accumulatedContent,
-                    isStreaming: !data.done,
-                  })
-                );
-              }
-
-              // 檢查是否完成
-              if (data.done) {
-                dispatch(
-                  updateMessage({
-                    chatId: currentChatId,
-                    messageId: assistantMessageId,
-                    content: accumulatedContent,
-                    isStreaming: false,
-                  })
-                );
+            // 跳過空行和 data: 前綴
+            if (!line.startsWith("data: ") || line === "data: [DONE]") {
+              if (line === "data: [DONE]") {
                 isStreamComplete = true;
                 break;
+              }
+              continue;
+            }
+
+            try {
+              const jsonStr = line.slice(6); // 移除 "data: " 前綴
+              const data = JSON.parse(jsonStr);
+
+              if (data.type === "tool_calls") {
+                // 處理工具調用信息
+                toolCallsInfo = data.tool_calls;
+                usedToolsInfo = data.used_tools;
+
+                console.log("收到工具調用信息:", toolCallsInfo);
+
+                // 更新消息顯示工具調用狀態
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: "正在執行工具調用...",
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                    usedTools: usedToolsInfo,
+                  })
+                );
+              } else if (data.type === "content") {
+                // 處理內容更新
+                accumulatedContent += data.content;
+
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: accumulatedContent,
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                    usedTools: usedToolsInfo,
+                  })
+                );
               }
             } catch (parseError) {
               console.warn("解析響應行失敗:", line, parseError);
@@ -592,6 +716,18 @@ const InputArea = () => {
 
           if (isStreamComplete) break;
         }
+
+        // 確保最終狀態更新
+        dispatch(
+          updateMessage({
+            chatId: currentChatId,
+            messageId: assistantMessageId,
+            content: accumulatedContent || "處理完成",
+            isStreaming: false,
+            toolCalls: toolCallsInfo,
+            usedTools: usedToolsInfo,
+          })
+        );
 
         // 確保流式響應完成後清理狀態
         dispatch(setIsWaiting(false));
@@ -624,12 +760,15 @@ const InputArea = () => {
 
       // 檢查每個文件
       files.forEach((file) => {
+        const isImageFile = file.type.startsWith("image/");
         const isTypeValid =
           ALLOWED_FILE_TYPES.includes(file.type) ||
           isFileExtensionSupported(file.name);
         const isSizeValid = file.size <= MAX_FILE_SIZE;
 
-        if (!isTypeValid) {
+        if (isImageFile && !supportsImages) {
+          rejectedFiles.push(`${file.name} (當前模型不支援圖片)`);
+        } else if (!isTypeValid) {
           rejectedFiles.push(`${file.name} (不支援的格式)`);
         } else if (!isSizeValid) {
           rejectedFiles.push(`${file.name} (超過20MB大小限制)`);
@@ -672,6 +811,24 @@ const InputArea = () => {
       {/* 顯示已上傳的檔案 */}
       <FileUploadArea />
 
+      {/* MCP 工具開關 */}
+      <div className="flex items-center gap-2 mb-2">
+        <Switch
+          id="mcp-tools"
+          checked={enableMCPTools}
+          onCheckedChange={setEnableMCPTools}
+        />
+        <Label htmlFor="mcp-tools" className="flex items-center gap-2 text-sm">
+          <Wrench className="h-4 w-4" />
+          啟用 MCP 工具
+        </Label>
+        {enableMCPTools && (
+          <span className="text-xs text-muted-foreground">
+            (可自動檢測並使用相關工具)
+          </span>
+        )}
+      </div>
+
       <div className="flex items-end gap-2">
         <Button
           variant="outline"
@@ -686,7 +843,19 @@ const InputArea = () => {
             className="hidden"
             onChange={handleFileUpload}
             multiple
-            accept=".csv,.pdf,.doc,.docx,.pptx,.json,.txt,.xml,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg"
+            accept={[
+              ".csv",
+              ".pdf",
+              ".doc",
+              ".docx",
+              ".pptx",
+              ".json",
+              ".txt",
+              ".xml",
+              ...(supportsImages
+                ? [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"]
+                : []),
+            ].join(",")}
           />
         </Button>
 

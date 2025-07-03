@@ -11,6 +11,17 @@ export interface FileData {
   lastModified: number;
 }
 
+// MCP 工具調用信息
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: any;
+  result?: any;
+  error?: string;
+  status: "pending" | "executing" | "completed" | "failed";
+  duration?: number;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -19,6 +30,9 @@ export interface Message {
   isStreaming?: boolean;
   files?: FileData[]; // 改為使用 FileData 以包含 content 屬性
   isFileList?: boolean;
+  // MCP 工具相關
+  toolCalls?: ToolCall[];
+  usedTools?: string[]; // 使用的工具名稱列表
 }
 export interface Chat {
   id: string;
@@ -94,6 +108,8 @@ const chatSlice = createSlice({
         messageId: string;
         content: string;
         isStreaming?: boolean;
+        toolCalls?: ToolCall[];
+        usedTools?: string[];
       }>
     ) => {
       const chat = state.chats.find((c) => c.id === action.payload.chatId);
@@ -104,6 +120,12 @@ const chatSlice = createSlice({
         if (message) {
           message.content = action.payload.content;
           message.isStreaming = action.payload.isStreaming;
+          if (action.payload.toolCalls !== undefined) {
+            message.toolCalls = action.payload.toolCalls;
+          }
+          if (action.payload.usedTools !== undefined) {
+            message.usedTools = action.payload.usedTools;
+          }
         }
       }
     },
@@ -185,6 +207,101 @@ export const {
   removeUploadedFile,
   clearUploadedFiles,
 } = chatSlice.actions;
+
+// 創建用於發送消息到 Ollama 的異步 thunk（支援工具）
+export const sendMessageToOllamaWithTools = createAsyncThunk(
+  "chat/sendMessageToOllamaWithTools",
+  async (
+    {
+      chatId,
+      message,
+      model,
+      enableTools = true,
+    }: {
+      chatId: string;
+      message: Message;
+      model: string;
+      enableTools?: boolean;
+    },
+    { dispatch, getState }
+  ) => {
+    try {
+      // 獲取當前聊天的所有消息
+      const state = getState() as any;
+      const currentChat = state.chat.chats.find(
+        (chat: Chat) => chat.id === chatId
+      );
+      const messages = currentChat?.messages || [];
+
+      // 構建消息歷史
+      const messageHistory = messages.map((msg: Message) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+      // 發送請求到帶工具的 Ollama API
+      const response = await fetch("/api/ollama/chat-with-tools", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: messageHistory,
+          enableTools,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const { message: aiMessage, error } = result;
+
+      if (error) {
+        throw new Error(error);
+      }
+
+      // 更新助手消息，包含工具調用信息
+      dispatch(
+        updateMessage({
+          chatId,
+          messageId: message.id,
+          content: aiMessage.content,
+          isStreaming: false,
+        })
+      );
+
+      // 如果有工具調用，更新消息的工具調用信息
+      if (aiMessage.toolCalls || aiMessage.usedTools) {
+        const chat = state.chat.chats.find((chat: Chat) => chat.id === chatId);
+        if (chat) {
+          const msgToUpdate = chat.messages.find(
+            (m: Message) => m.id === message.id
+          );
+          if (msgToUpdate) {
+            msgToUpdate.toolCalls = aiMessage.toolCalls;
+            msgToUpdate.usedTools = aiMessage.usedTools;
+          }
+        }
+      }
+
+      return aiMessage.content;
+    } catch (error) {
+      console.error("發送消息錯誤:", error);
+      dispatch(
+        updateMessage({
+          chatId,
+          messageId: message.id,
+          content: "抱歉，發生錯誤，請稍後再試。",
+          isStreaming: false,
+        })
+      );
+      throw error;
+    }
+  }
+);
 
 // 創建用於發送消息到 Ollama 的異步 thunk
 export const sendMessageToOllama = createAsyncThunk(

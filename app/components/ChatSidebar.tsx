@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +15,7 @@ import {
   X,
   AlertCircle,
   Loader2,
+  GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/app/redux/hooks";
@@ -36,7 +37,9 @@ import {
   setIsNewChatDialogOpen,
   setIsSidebarOpen,
   setActiveTab,
+  setSidebarWidth,
 } from "@/app/redux/uiSlice";
+import MCPToolsTab from "./MCPToolsTab";
 
 const ChatSidebar = () => {
   const dispatch = useAppDispatch();
@@ -54,13 +57,33 @@ const ChatSidebar = () => {
   const isSidebarOpen = useAppSelector((state) => state.ui.isSidebarOpen);
   const isMobile = useAppSelector((state) => state.ui.isMobile);
   const activeTab = useAppSelector((state) => state.ui.activeTab);
+  const sidebarWidth = useAppSelector((state) => state.ui.sidebarWidth);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [startWidth, setStartWidth] = useState(0);
 
   // 在組件掛載時獲取模型列表
   useEffect(() => {
     dispatch(fetchModels());
   }, [dispatch]);
+
+  // 從 localStorage 載入側邊欄寬度
+  useEffect(() => {
+    const savedWidth = localStorage.getItem("sidebarWidth");
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10);
+      if (width >= 200 && width <= 600) {
+        dispatch(setSidebarWidth(width));
+      }
+    }
+  }, [dispatch]);
+
+  // 保存側邊欄寬度到 localStorage
+  useEffect(() => {
+    localStorage.setItem("sidebarWidth", sidebarWidth.toString());
+  }, [sidebarWidth]);
 
   // 在模型列表載入完成後，獲取統計資料（只執行一次）
   useEffect(() => {
@@ -154,17 +177,73 @@ const ChatSidebar = () => {
     dispatch(fetchModelDetails(modelName));
   };
 
+  // 拖拽開始
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (isMobile) return; // 移動設備不支援拖拽
+      e.preventDefault();
+      setIsResizing(true);
+      setStartX(e.clientX);
+      setStartWidth(sidebarWidth);
+    },
+    [isMobile, sidebarWidth]
+  );
+
+  // 拖拽中
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing) return;
+
+      const deltaX = e.clientX - startX;
+      const newWidth = startWidth + deltaX;
+
+      dispatch(setSidebarWidth(newWidth));
+    },
+    [isResizing, startX, startWidth, dispatch]
+  );
+
+  // 拖拽結束
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // 監聽拖拽事件
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.userSelect = "none"; // 防止選擇文字
+      document.body.style.cursor = "col-resize"; // 設置游標
+    } else {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
   return (
     <div
       ref={sidebarRef}
       className={cn(
-        "w-80 border-r flex flex-col bg-white transition-all duration-300 ease-in-out",
+        "border-r flex flex-col bg-white relative",
         isMobile
           ? isSidebarOpen
             ? "fixed inset-y-0 left-0 z-40"
-            : "fixed inset-y-0 -left-80 z-40"
-          : ""
+            : "fixed inset-y-0 z-40"
+          : "transition-all duration-300 ease-in-out"
       )}
+      style={{
+        width: isMobile ? "320px" : `${sidebarWidth}px`,
+        left: isMobile && !isSidebarOpen ? `-${320}px` : undefined,
+      }}
     >
       {/* 移動設備關閉按鈕 */}
       {isMobile && isSidebarOpen && (
@@ -194,9 +273,10 @@ const ChatSidebar = () => {
         value={activeTab}
         onValueChange={(value) => dispatch(setActiveTab(value))}
       >
-        <TabsList className="grid grid-cols-2 mx-4 mt-2">
+        <TabsList className="grid grid-cols-3 mx-4 mt-2">
           <TabsTrigger value="chats">聊天</TabsTrigger>
           <TabsTrigger value="models">模型</TabsTrigger>
+          <TabsTrigger value="tools">工具</TabsTrigger>
         </TabsList>
 
         <TabsContent
@@ -421,7 +501,32 @@ const ChatSidebar = () => {
             </div>
           </ScrollArea>
         </TabsContent>
+
+        <TabsContent
+          value="tools"
+          className={`flex-1 overflow-hidden ${
+            activeTab === "tools" ? "" : "hidden"
+          }`}
+        >
+          <div className="h-[calc(100vh-200px)] overflow-hidden">
+            <MCPToolsTab />
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* 拖拽手柄 - 只在桌面版顯示 */}
+      {!isMobile && (
+        <div
+          className="absolute top-0 right-0 w-1 h-full bg-transparent hover:bg-blue-500 cursor-col-resize transition-colors duration-200 group"
+          onMouseDown={handleMouseDown}
+        >
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="bg-blue-500 text-white p-1 rounded-full shadow-lg">
+              <GripVertical className="h-3 w-3" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

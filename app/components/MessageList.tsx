@@ -11,6 +11,7 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { materialDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ImagePreviewDialog from "./ImagePreviewDialog";
+import ToolCallDisplay from "./ToolCallDisplay";
 
 type MessageListProps = {
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
@@ -154,6 +155,26 @@ const MessageList = ({ messagesEndRef }: MessageListProps) => {
                   </div>
                 )}
               </div>
+
+              {/* 顯示工具調用 */}
+              {message.toolCalls && message.toolCalls.length > 0 && (
+                <ToolCallDisplay toolCalls={message.toolCalls} />
+              )}
+
+              {/* 顯示使用的工具摘要 */}
+              {message.usedTools && message.usedTools.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {message.usedTools.map((toolName, index) => (
+                    <div
+                      key={index}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                    >
+                      <Bot className="h-3 w-3" />
+                      {toolName}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="text-xs text-muted-foreground">
                 {formatTime(message.timestamp)}

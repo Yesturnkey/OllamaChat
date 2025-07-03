@@ -3,14 +3,16 @@
 import { useAppDispatch, useAppSelector } from "@/app/redux/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { X, FileText } from "lucide-react";
+import { X, FileText, AlertTriangle } from "lucide-react";
 import { removeUploadedFile } from "@/app/redux/chatSlice";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ImagePreviewDialog from "./ImagePreviewDialog";
 
 const FileUploadArea = () => {
   const dispatch = useAppDispatch();
   const uploadedFiles = useAppSelector((state) => state.chat.uploadedFiles);
+  const selectedModel = useAppSelector((state) => state.model.selectedModel);
+  const models = useAppSelector((state) => state.model.models);
 
   // 圖片預覽狀態
   const [previewImage, setPreviewImage] = useState<{
@@ -18,6 +20,10 @@ const FileUploadArea = () => {
     alt: string;
     fileName: string;
   } | null>(null);
+
+  // 獲取當前選中模型的能力
+  const currentModel = models.find((model) => model.id === selectedModel);
+  const supportsImages = currentModel?.capabilities?.supportsImages || false;
 
   // 移除上傳的文件
   const handleRemoveFile = (fileName: string) => {
@@ -46,7 +52,25 @@ const FileUploadArea = () => {
     setPreviewImage(null);
   };
 
-  if (uploadedFiles.length === 0) {
+  // 自動移除不支援的圖片文件
+  useEffect(() => {
+    if (!supportsImages) {
+      const imageFiles = uploadedFiles.filter((file) => isImageFile(file.type));
+      imageFiles.forEach((file) => {
+        dispatch(removeUploadedFile(file.name));
+      });
+    }
+  }, [supportsImages, uploadedFiles, dispatch]);
+
+  // 過濾文件：如果模型不支援圖片，則不顯示圖片文件
+  const displayFiles = uploadedFiles.filter((file) => {
+    if (isImageFile(file.type)) {
+      return supportsImages;
+    }
+    return true; // 非圖片文件總是顯示
+  });
+
+  if (displayFiles.length === 0) {
     return null;
   }
 
@@ -54,8 +78,15 @@ const FileUploadArea = () => {
     <>
       <div className="mb-4 p-3 bg-muted/50 rounded-lg border">
         <div className="text-xs text-muted-foreground mb-2">已上傳的檔案：</div>
+        {!supportsImages &&
+          uploadedFiles.some((file) => isImageFile(file.type)) && (
+            <div className="flex items-center gap-2 mb-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
+              <AlertTriangle className="h-3 w-3" />
+              <span>當前模型不支援圖片，圖片文件已被移除</span>
+            </div>
+          )}
         <div className="flex flex-wrap gap-2">
-          {uploadedFiles.map((file, index) => (
+          {displayFiles.map((file, index) => (
             <div key={index} className="relative group">
               {isImageFile(file.type) ? (
                 // 圖片預覽
