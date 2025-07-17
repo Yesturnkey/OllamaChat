@@ -107,12 +107,12 @@ const MCPServerCard = ({
             <div>
               <span className="text-muted-foreground">類型:</span>
               <Badge variant="outline" className="ml-2">
-                {server.type.toUpperCase()}
+                {server.type?.toUpperCase() || "UNKNOWN"}
               </Badge>
             </div>
             <div>
               <span className="text-muted-foreground">工具:</span>
-              <span className="ml-2">{server.tools.length}</span>
+              <span className="ml-2">{server.tools?.length || 0}</span>
             </div>
           </div>
 
@@ -122,7 +122,7 @@ const MCPServerCard = ({
               <span className="text-muted-foreground">命令:</span>
               <code className="ml-2 bg-muted px-2 py-1 rounded text-xs">
                 {server.command}
-                {server.args && server.args.length > 0 && (
+                {Array.isArray(server.args) && server.args.length > 0 && (
                   <span className="ml-1">{server.args.join(" ")}</span>
                 )}
               </code>

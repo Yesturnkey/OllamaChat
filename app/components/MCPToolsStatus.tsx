@@ -101,8 +101,10 @@ const MCPToolsStatus = ({ className }: MCPToolsStatusProps) => {
               ? "MCP 工具已就緒"
               : "MCP 工具不可用"}
           </span>
-          {toolsStatus.available && toolsStatus.tools.length > 0 && (
-            <Badge variant="secondary">{toolsStatus.tools.length} 個工具</Badge>
+          {toolsStatus.available && (toolsStatus.tools?.length || 0) > 0 && (
+            <Badge variant="secondary">
+              {toolsStatus.tools?.length || 0} 個工具
+            </Badge>
           )}
         </div>
 
@@ -115,11 +117,11 @@ const MCPToolsStatus = ({ className }: MCPToolsStatusProps) => {
         )}
 
         {/* 可用工具列表 */}
-        {toolsStatus.available && toolsStatus.tools.length > 0 && (
+        {toolsStatus.available && (toolsStatus.tools?.length || 0) > 0 && (
           <div>
             <h4 className="text-sm font-medium mb-2">可用工具：</h4>
             <div className="grid grid-cols-1 gap-2">
-              {toolsStatus.tools.map((tool, index) => (
+              {(toolsStatus.tools || []).map((tool, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between p-2 bg-muted rounded"

@@ -31,7 +31,7 @@ const InputArea = () => {
   const mcpServers = useAppSelector((state) => state.mcp.servers);
   const connectedServers = mcpServers.filter((server) => server.connected);
   const availableTools = connectedServers.flatMap((server) =>
-    server.tools
+    (server.tools || [])
       .filter((tool) => tool.enabled)
       .map((tool) => ({
         ...tool,

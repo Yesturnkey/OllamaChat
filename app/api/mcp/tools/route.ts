@@ -16,23 +16,22 @@ export async function GET(request: NextRequest) {
       const client = mcpClientManager.getClient(clientId);
       console.log(`檢查客戶端 ${clientId}:`, {
         exists: !!client,
-        connected: client?.isConnected(),
-        serverInfo: client?.getServerInfo(),
-        toolCount: client?.getTools().length,
       });
 
-      if (client && client.isConnected()) {
-        const tools = client.getTools();
-        const serverInfo = client.getServerInfo();
-
-        allTools.push(
-          ...tools.map((tool) => ({
-            ...tool,
-            server: serverInfo?.name || clientId,
-            serverId: clientId,
-            enabled: true,
-          }))
-        );
+      if (client) {
+        try {
+          const tools = await mcpClientManager.listTools(clientId);
+          allTools.push(
+            ...tools.map((tool) => ({
+              ...tool,
+              server: clientId,
+              serverId: clientId,
+              enabled: true,
+            }))
+          );
+        } catch (error) {
+          console.error(`獲取客戶端 ${clientId} 工具失敗:`, error);
+        }
       }
     }
 
@@ -49,8 +48,6 @@ export async function GET(request: NextRequest) {
           return {
             id,
             exists: !!client,
-            connected: client?.isConnected(),
-            toolCount: client?.getTools().length,
           };
         }),
       },
@@ -97,19 +94,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!client.isConnected()) {
-      console.error(`服務器 ${serverId} 未連接，狀態:`, client.isConnected());
-      return NextResponse.json(
-        { error: `服務器未連接: ${serverId}` },
-        { status: 400 }
-      );
-    }
-
     console.log(`調用 MCP 工具: ${toolName} on ${serverId}`, args);
 
     // 調用工具
     const startTime = Date.now();
-    const result = await client.callTool(toolName, args);
+    const result = await mcpClientManager.callTool(serverId, toolName, args);
     const duration = Date.now() - startTime;
 
     console.log(`工具調用完成: ${toolName} (${duration}ms)`);

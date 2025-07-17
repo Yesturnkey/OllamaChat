@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mcpClientManager } from "@/lib/mcp-client";
+import { MCPClient } from "mcp-client";
 
 // 檢測用戶消息是否需要使用工具
 const detectToolUsage = (message: string, availableTools: any[]) => {
@@ -265,90 +265,62 @@ const analyzeToolInput = (userMessage: string, inputSchema: any) => {
   return args;
 };
 
-// 調用真實的 MCP 工具
-const callMCPTool = async (toolName: string, args: any, toolDef: any) => {
-  console.log(`準備調用真實 MCP 工具: ${toolName}`, args);
-
-  try {
-    // 如果工具定義中包含服務器配置，使用即時連接
-    if (toolDef.serverConfig) {
-      console.log(`使用即時連接模式調用工具`);
-      return await callToolWithDirectConnection(
-        toolName,
-        args,
-        toolDef.serverConfig
-      );
-    }
-
-    // 否則嘗試使用全局客戶端管理器
-    const response = await fetch(
-      `${
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-      }/api/mcp/tools`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          serverId: toolDef.serverId,
-          toolName: toolName,
-          args: args,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "工具調用失敗");
-    }
-
-    const result = await response.json();
-    return result.result;
-  } catch (error) {
-    console.error(`MCP 工具調用失敗: ${toolName}`, error);
-    throw error;
-  }
-};
-
-// 使用直接連接調用工具
 const callToolWithDirectConnection = async (
   toolName: string,
   args: any,
   serverConfig: any
 ) => {
-  const { MCPClient } = await import("@/lib/mcp-client");
-
-  if (serverConfig.type !== "stdio") {
-    throw new Error("即時連接目前只支援 STDIO 類型");
-  }
-
-  const client = new MCPClient(
-    serverConfig.command,
-    serverConfig.args || [],
-    serverConfig.env || {}
+  console.log(
+    `[callToolWithDirectConnection] 準備直接連接到 MCP 服務器:`,
+    serverConfig
   );
 
+  const { command, args: cmdArgs, env } = serverConfig;
+
+  if (!command) {
+    throw new Error("服務器配置中缺少 command");
+  }
+
+  // 解析命令：如果 command 包含空格，將其拆分為 command 和 args
+  let actualCommand = command;
+  let actualArgs = cmdArgs || [];
+
+  if (command.includes(" ")) {
+    const parts = command.split(" ").filter(Boolean);
+    actualCommand = parts[0];
+    actualArgs = [...parts.slice(1), ...(cmdArgs || [])];
+  }
+
+  const client = new MCPClient({
+    name: "ollamachat-direct",
+    version: "1.0.0",
+  });
+
   try {
-    console.log(
-      `建立即時 MCP 連接: ${serverConfig.command} ${(
-        serverConfig.args || []
-      ).join(" ")}`
-    );
+    await client.connect({
+      type: "stdio",
+      command: actualCommand,
+      args: actualArgs,
+      env: env || {},
+    });
 
-    // 連接並初始化
-    await client.connect();
-    await client.initialize();
+    console.log(`[callToolWithDirectConnection] 已連接到 MCP 服務器`);
 
-    // 調用工具
-    const result = await client.callTool(toolName, args);
+    const result = await client.callTool({
+      name: toolName,
+      arguments: args,
+    });
 
-    console.log(`即時工具調用成功: ${toolName}`);
+    console.log(`[callToolWithDirectConnection] 工具調用結果:`, result);
+
+    await client.close();
+    console.log(`[callToolWithDirectConnection] 已斷開與 MCP 服務器的連接`);
+
     return result;
-  } finally {
-    // 確保連接被關閉
-    await client.disconnect();
-    console.log(`已關閉即時 MCP 連接`);
+  } catch (error) {
+    console.error(`[callToolWithDirectConnection] MCP 客戶端錯誤:`, error);
+    await client.close();
+    throw error;
   }
 };
 
@@ -395,7 +367,11 @@ export async function POST(request: NextRequest) {
 
         try {
           const startTime = Date.now();
-          const result = await callMCPTool(tool, args, toolDef);
+          const result = await callToolWithDirectConnection(
+            tool,
+            args,
+            toolDef.serverConfig
+          );
           const duration = Date.now() - startTime;
 
           // 更新工具調用為成功狀態

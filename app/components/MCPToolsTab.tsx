@@ -69,7 +69,7 @@ const MCPToolsTab = () => {
 
   // 根據篩選器過濾工具
   const filteredTools =
-    selectedServer?.tools.filter((tool) => {
+    (selectedServer?.tools || []).filter((tool) => {
       switch (mcpToolsFilter) {
         case "enabled":
           return tool.enabled;
@@ -85,7 +85,7 @@ const MCPToolsTab = () => {
     servers: servers.length,
     selectedServerId,
     selectedServer: selectedServer?.name,
-    totalTools: selectedServer?.tools.length || 0,
+    totalTools: selectedServer?.tools?.length || 0,
     filteredTools: filteredTools.length,
     mcpToolsFilter,
     isConnected: selectedServer?.connected,
@@ -143,7 +143,7 @@ const MCPToolsTab = () => {
 
     // 如果服務器已連接但沒有工具，則獲取工具列表
     const server = servers.find((s) => s.id === serverId);
-    if (server && server.connected && server.tools.length === 0) {
+    if (server && server.connected && (server.tools?.length || 0) === 0) {
       dispatch(fetchServerTools(serverId));
     }
   };
@@ -300,7 +300,7 @@ const MCPToolsTab = () => {
               </div>
 
               {/* 工具篩選器 */}
-              {selectedServer && selectedServer.tools.length > 0 && (
+              {selectedServer && (selectedServer.tools?.length || 0) > 0 && (
                 <div className="flex items-center gap-2">
                   <Filter className="h-4 w-4 text-muted-foreground" />
                   <Select

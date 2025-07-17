@@ -128,12 +128,13 @@ const initialState: MCPState = {
     totalServers: persistedData.servers.length,
     connectedServers: 0,
     totalTools: persistedData.servers.reduce(
-      (sum: number, server: MCPServer) => sum + server.tools.length,
+      (sum: number, server: MCPServer) => sum + (server.tools?.length || 0),
       0
     ),
     enabledTools: persistedData.servers.reduce(
       (sum: number, server: MCPServer) =>
-        sum + server.tools.filter((tool: MCPTool) => tool.enabled).length,
+        sum +
+        (server.tools?.filter((tool: MCPTool) => tool.enabled).length || 0),
       0
     ),
   },

@@ -93,40 +93,46 @@ async function connectStdioServer(
     throw new Error("STDIO 連接需要指定命令");
   }
 
-  console.log(`連接 STDIO 服務器: ${command} ${args.join(" ")}`);
+  // 解析命令：如果 command 包含空格，將其拆分為 command 和 args
+  let actualCommand = command;
+  let actualArgs = args;
+
+  if (command.includes(" ")) {
+    const parts = command.split(" ").filter(Boolean);
+    actualCommand = parts[0];
+    actualArgs = [...parts.slice(1), ...args];
+  }
+
+  console.log(`連接 STDIO 服務器: ${actualCommand} ${actualArgs.join(" ")}`);
 
   try {
-    // 創建並存儲 MCP 客戶端
+    // 創建並連接 MCP 客戶端
     const client = await mcpClientManager.createClient(
       serverId,
-      command,
-      args,
+      actualCommand,
+      actualArgs,
       env
     );
 
-    // 連接到 MCP 服務器
-    await client.connect();
-
-    // 初始化 MCP 協議
-    const serverInfo = await client.initialize();
-
     // 獲取工具列表
-    const tools = await client.listTools();
+    const tools = await client.getAllTools();
 
-    console.log(`成功連接到 MCP 服務器: ${serverInfo.name}`);
+    console.log(`成功連接到 MCP 服務器`);
     console.log(`發現 ${tools.length} 個工具`);
 
     return {
       tools: tools.map((tool) => ({
-        ...tool,
-        server: serverInfo.name || "stdio-server",
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        server: "stdio-server",
         enabled: true,
       })),
       serverInfo: {
-        name: serverInfo.name,
-        version: serverInfo.version,
-        protocolVersion: serverInfo.protocolVersion,
-        capabilities: serverInfo.capabilities,
+        name: "STDIO Server",
+        version: "1.0.0",
+        protocolVersion: "2024-11-05",
+        capabilities: {},
         type: "stdio",
       },
     };
