@@ -129,65 +129,52 @@ async function testHttpConnection(
     throw new Error("HTTP 連接需要指定 URL");
   }
 
+  console.log(`測試 HTTP 連接: ${url}`);
+
+  const client = new MCPClient({
+    name: "ollamachat-test",
+    version: "1.0.0",
+  });
+
   try {
-    console.log(`測試 HTTP 連接: ${url}`);
-
-    // 嘗試連接到 MCP HTTP 服務器
-    const response = await fetch(`${url}/mcp/info`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      signal: AbortSignal.timeout(10000), // 10秒超時
+    // 使用 httpStream 連接
+    await client.connect({
+      type: "httpStream",
+      url: url,
     });
-
-    if (!response.ok) {
-      throw new Error(
-        `HTTP 連接失敗: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const serverInfo = await response.json();
 
     // 獲取工具列表
-    const toolsResponse = await fetch(`${url}/mcp/tools`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-    });
+    const tools = await client.getAllTools();
 
-    let tools = [];
-    if (toolsResponse.ok) {
-      const toolsData = await toolsResponse.json();
-      tools = toolsData.tools || [];
-    }
-
-    console.log(`成功連接到 HTTP MCP 服務器: ${serverInfo.name || "Unknown"}`);
+    console.log(`成功連接到 HTTP MCP 服務器`);
     console.log(`發現 ${tools.length} 個工具`);
 
     return {
-      tools: tools.map((tool: any) => ({
-        ...tool,
-        server: serverInfo.name || "http-server",
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        server: "http-server",
         enabled: true,
       })),
       serverInfo: {
-        ...serverInfo,
+        name: "HTTP Server",
+        version: "1.0.0",
+        protocolVersion: "2024-11-05",
+        capabilities: {},
         type: "http",
+        url: url,
       },
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("連接超時，請檢查 URL 是否正確");
-    }
+    console.error("HTTP 連接測試失敗:", error);
     throw new Error(
       `HTTP 連接測試失敗: ${
         error instanceof Error ? error.message : "未知錯誤"
       }`
     );
+  } finally {
+    await client.close();
   }
 }
 
@@ -200,54 +187,49 @@ async function testSseConnection(
     throw new Error("SSE 連接需要指定 URL");
   }
 
-  try {
-    console.log(`測試 SSE 連接: ${url}`);
+  console.log(`測試 SSE 連接: ${url}`);
 
-    // 測試 SSE 端點是否可訪問
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "text/event-stream",
-        "Cache-Control": "no-cache",
-        ...headers,
-      },
-      signal: AbortSignal.timeout(5000), // 5秒超時
+  const client = new MCPClient({
+    name: "ollamachat-test",
+    version: "1.0.0",
+  });
+
+  try {
+    // 使用 mcp-client 建立 SSE 連接
+    await client.connect({
+      type: "sse",
+      url: url,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `SSE 連接失敗: ${response.status} ${response.statusText}`
-      );
-    }
+    // 獲取工具列表
+    const tools = await client.getAllTools();
 
-    // 檢查是否是正確的 SSE 響應
-    const contentType = response.headers.get("content-type");
-    if (!contentType?.includes("text/event-stream")) {
-      throw new Error("服務器沒有返回正確的 SSE 內容類型");
-    }
-
-    console.log("SSE 連接測試成功");
-
-    // TODO: 實現真實的 SSE MCP 協議通信
-    // 這裡需要建立 SSE 連接並通過事件流進行 MCP 協議通信
-    // 目前返回基本信息，表示連接成功但還沒有實現完整的 SSE MCP 協議
+    console.log(`成功連接到 SSE MCP 服務器`);
+    console.log(`發現 ${tools.length} 個工具`);
 
     return {
-      tools: [],
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        server: "sse-server",
+        enabled: true,
+      })),
       serverInfo: {
         name: "SSE Server",
         version: "1.0.0",
-        type: "sse",
+        protocolVersion: "2024-11-05",
         capabilities: {},
-        message: "SSE 連接成功，但 SSE MCP 協議實現正在開發中",
+        type: "sse",
+        url: url,
       },
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("SSE 連接超時，請檢查 URL 是否正確");
-    }
+    console.error("SSE 連接測試失敗:", error);
     throw new Error(
       `SSE 連接測試失敗: ${error instanceof Error ? error.message : "未知錯誤"}`
     );
+  } finally {
+    await client.close();
   }
 }

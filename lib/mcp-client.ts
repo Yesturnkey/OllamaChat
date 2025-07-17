@@ -12,9 +12,21 @@ export class MCPClientManager {
 
   async createClient(
     id: string,
-    command: string,
-    args: string[] = [],
-    env: Record<string, string> = {}
+    connectionOptions:
+      | {
+          type: "stdio";
+          command: string;
+          args: string[];
+          env?: Record<string, string>;
+        }
+      | {
+          type: "sse";
+          url: string;
+        }
+      | {
+          type?: "httpStream";
+          url: string;
+        }
   ): Promise<MCPClient> {
     if (this.clients.has(id)) {
       await this.disconnect(id);
@@ -25,15 +37,25 @@ export class MCPClientManager {
       version: "1.0.0",
     });
 
-    await client.connect({
+    await client.connect(connectionOptions);
+
+    this.clients.set(id, client);
+    return client;
+  }
+
+  // 保持向後相容性的方法
+  async createStdioClient(
+    id: string,
+    command: string,
+    args: string[] = [],
+    env: Record<string, string> = {}
+  ): Promise<MCPClient> {
+    return this.createClient(id, {
       type: "stdio",
       command,
       args,
       env,
     });
-
-    this.clients.set(id, client);
-    return client;
   }
 
   getClient(id: string): MCPClient | null {
