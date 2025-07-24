@@ -8,7 +8,22 @@ import type {
 export type { MCPTool, MCPServerInfo, MCPToolCallResult };
 
 export class MCPClientManager {
+  private static instance: MCPClientManager;
   private clients = new Map<string, MCPClient>();
+  
+  constructor() {
+    if (MCPClientManager.instance) {
+      return MCPClientManager.instance;
+    }
+    MCPClientManager.instance = this;
+  }
+  
+  static getInstance(): MCPClientManager {
+    if (!MCPClientManager.instance) {
+      MCPClientManager.instance = new MCPClientManager();
+    }
+    return MCPClientManager.instance;
+  }
 
   async createClient(
     id: string,
@@ -101,4 +116,4 @@ export class MCPClientManager {
   }
 }
 
-export const mcpClientManager = new MCPClientManager();
+export const mcpClientManager = MCPClientManager.getInstance();

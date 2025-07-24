@@ -256,6 +256,58 @@ export const connectServer = createAsyncThunk(
   }
 );
 
+// 異步 thunk：同步後端連接狀態
+export const syncServerStatus = createAsyncThunk(
+  "mcp/syncServerStatus",
+  async (_, { rejectWithValue, getState }) => {
+    try {
+      console.log("[MCP Sync] 開始同步後端連接狀態");
+      
+      const response = await fetch("/api/mcp/servers/status");
+      if (!response.ok) {
+        const error = await response.json();
+        return rejectWithValue(error.message || "獲取服務器狀態失敗");
+      }
+
+      const result = await response.json();
+      console.log(`[MCP Sync] 後端狀態：${result.totalConnected}/${result.totalServers} 服務器已連接`);
+      
+      // 如果後端沒有連接但前端有服務器配置，嘗試重新連接
+      if (result.totalConnected === 0) {
+        const state = getState() as { mcp: { servers: MCPServer[] } };
+        const connectedServers = state.mcp.servers.filter(s => s.connected);
+        
+        if (connectedServers.length > 0) {
+          console.log(`[MCP Sync] 檢測到前端有 ${connectedServers.length} 個應連接的服務器，嘗試重新連接`);
+          
+          const reconnectResponse = await fetch("/api/mcp/servers/reconnect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ servers: connectedServers }),
+          });
+          
+          if (reconnectResponse.ok) {
+            const reconnectResult = await reconnectResponse.json();
+            console.log(`[MCP Sync] 重新連接完成：${reconnectResult.message}`);
+            
+            // 返回重新連接後的服務器狀態
+            return reconnectResult.results;
+          } else {
+            console.warn("[MCP Sync] 重新連接失敗，返回當前狀態");
+          }
+        }
+      }
+      
+      return result.serverStatus;
+    } catch (error) {
+      console.error("[MCP Sync] 同步狀態失敗:", error);
+      return rejectWithValue(
+        error instanceof Error ? error.message : "同步服務器狀態失敗"
+      );
+    }
+  }
+);
+
 // MCP Slice
 const mcpSlice = createSlice({
   name: "mcp",
@@ -509,6 +561,51 @@ const mcpSlice = createSlice({
           server.connecting = false;
           server.error = action.payload as string;
         }
+      })
+      // 同步服務器狀態
+      .addCase(syncServerStatus.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(syncServerStatus.fulfilled, (state, action) => {
+        state.loading = false;
+        const serverStatusList = action.payload;
+        
+        // 更新現有服務器的連接狀態和工具
+        for (const serverStatus of serverStatusList) {
+          const server = state.servers.find((s) => s.id === serverStatus.id);
+          if (server) {
+            server.connected = serverStatus.success || serverStatus.connected || false;
+            server.connecting = false;
+            server.error = serverStatus.error;
+            
+            if ((serverStatus.success || serverStatus.connected) && serverStatus.tools) {
+              server.tools = serverStatus.tools.map((tool: any) => ({
+                ...tool,
+                enabled: tool.enabled !== false
+              }));
+              server.lastConnected = serverStatus.lastChecked || new Date().toISOString();
+            } else {
+              server.tools = [];
+            }
+          }
+        }
+        
+        // 更新統計
+        state.stats.connectedServers = state.servers.filter(
+          (s) => s.connected
+        ).length;
+        state.stats.totalTools = state.servers.flatMap((s) => s.tools).length;
+        state.stats.enabledTools = state.servers
+          .flatMap((s) => s.tools)
+          .filter((t) => t.enabled).length;
+          
+        // 保存到 localStorage
+        savePersistedData(state.servers, state.selectedServerId);
+      })
+      .addCase(syncServerStatus.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
       });
   },
 });
@@ -527,5 +624,13 @@ export const {
   clearError,
   resetMCP,
 } = mcpSlice.actions;
+
+// 導出 async thunks
+export {
+  testServerConnection,
+  fetchServerTools,
+  connectServer,
+  syncServerStatus,
+};
 
 export default mcpSlice.reducer;

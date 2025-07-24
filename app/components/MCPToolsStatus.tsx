@@ -32,7 +32,9 @@ const MCPToolsStatus = ({ className }: MCPToolsStatusProps) => {
   const checkToolsStatus = async () => {
     setIsLoading(true);
     try {
-      // 測試 MCP 工具 API
+      // 首先同步後端狀態，然後測試 MCP 工具 API
+      await fetch("/api/mcp/servers/status");
+      
       const response = await fetch("/api/mcp/tools", {
         method: "GET",
       });

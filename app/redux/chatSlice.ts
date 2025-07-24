@@ -118,7 +118,9 @@ const chatSlice = createSlice({
           (m) => m.id === action.payload.messageId
         );
         if (message) {
-          message.content = action.payload.content;
+          // 過濾掉工具調用標籤作為額外保護
+          const cleanContent = action.payload.content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
+          message.content = cleanContent;
           message.isStreaming = action.payload.isStreaming;
           if (action.payload.toolCalls !== undefined) {
             message.toolCalls = action.payload.toolCalls;

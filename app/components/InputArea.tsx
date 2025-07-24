@@ -288,14 +288,39 @@ const InputArea = () => {
               const jsonStr = line.slice(6); // 移除 "data: " 前綴
               const data = JSON.parse(jsonStr);
 
-              if (data.type === "tool_calls") {
-                // 處理工具調用信息
+              if (data.type === "tool_call") {
+                // 處理單個工具調用信息
+                toolCallsInfo = [data.tool_call]; // 包裝成陣列以保持一致性
+                
+                console.log("收到工具調用信息:", data.tool_call);
+
+                // 更新消息顯示工具調用狀態
+                const statusText = data.tool_call.status === "completed" 
+                  ? "工具調用完成，正在生成回答..." 
+                  : "正在執行工具調用...";
+                
+                // 如果工具調用完成，重置累積內容為空，準備接收最終回答
+                if (data.tool_call.status === "completed") {
+                  accumulatedContent = "";
+                  console.log("工具調用完成，重置 accumulatedContent 準備接收最終回答");
+                }
+                
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: statusText,
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                  })
+                );
+              } else if (data.type === "tool_calls") {
+                // 處理多個工具調用信息（兼容舊格式）
                 toolCallsInfo = data.tool_calls;
                 usedToolsInfo = data.used_tools;
 
                 console.log("收到工具調用信息:", toolCallsInfo);
 
-                // 更新消息顯示工具調用狀態
                 dispatch(
                   updateMessage({
                     chatId: currentChatId,
@@ -308,7 +333,13 @@ const InputArea = () => {
                 );
               } else if (data.type === "content") {
                 // 處理內容更新
-                accumulatedContent += data.content;
+                const newContent = data.message?.content || data.content || "";
+                
+                // 過濾掉任何可能的工具調用標籤（作為額外保護）
+                const cleanContent = newContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
+                if (cleanContent) {
+                  accumulatedContent += cleanContent;
+                }
 
                 dispatch(
                   updateMessage({
@@ -520,14 +551,39 @@ const InputArea = () => {
               const jsonStr = line.slice(6); // 移除 "data: " 前綴
               const data = JSON.parse(jsonStr);
 
-              if (data.type === "tool_calls") {
-                // 處理工具調用信息
+              if (data.type === "tool_call") {
+                // 處理單個工具調用信息
+                toolCallsInfo = [data.tool_call]; // 包裝成陣列以保持一致性
+                
+                console.log("收到工具調用信息:", data.tool_call);
+
+                // 更新消息顯示工具調用狀態
+                const statusText = data.tool_call.status === "completed" 
+                  ? "工具調用完成，正在生成回答..." 
+                  : "正在執行工具調用...";
+                
+                // 如果工具調用完成，重置累積內容為空，準備接收最終回答
+                if (data.tool_call.status === "completed") {
+                  accumulatedContent = "";
+                  console.log("工具調用完成，重置 accumulatedContent 準備接收最終回答");
+                }
+                
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: statusText,
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                  })
+                );
+              } else if (data.type === "tool_calls") {
+                // 處理多個工具調用信息（兼容舊格式）
                 toolCallsInfo = data.tool_calls;
                 usedToolsInfo = data.used_tools;
 
                 console.log("收到工具調用信息:", toolCallsInfo);
 
-                // 更新消息顯示工具調用狀態
                 dispatch(
                   updateMessage({
                     chatId: currentChatId,
@@ -540,7 +596,13 @@ const InputArea = () => {
                 );
               } else if (data.type === "content") {
                 // 處理內容更新
-                accumulatedContent += data.content;
+                const newContent = data.message?.content || data.content || "";
+                
+                // 過濾掉任何可能的工具調用標籤（作為額外保護）
+                const cleanContent = newContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
+                if (cleanContent) {
+                  accumulatedContent += cleanContent;
+                }
 
                 dispatch(
                   updateMessage({
@@ -613,22 +675,14 @@ const InputArea = () => {
           content: currentMessage,
         });
 
-        // 根據是否啟用 MCP 工具選擇不同的 API
-        const apiEndpoint = enableMCPTools
-          ? "/api/ollama/chat-with-tools"
-          : "/api/ollama/chat";
-        const requestBody = enableMCPTools
-          ? {
-              model: selectedModel,
-              messages: chatHistory,
-              enableTools: enableMCPTools,
-              availableTools: availableTools, // 傳遞可用工具
-            }
-          : {
-              model: selectedModel,
-              messages: chatHistory,
-              stream: true,
-            };
+        // 使用統一的聊天 API，根據 enableMCPTools 決定是否啟用工具調用
+        const apiEndpoint = "/api/ollama/chat";
+        const requestBody = {
+          model: selectedModel,
+          messages: chatHistory,
+          stream: true,
+          enableTools: enableMCPTools, // 傳遞工具啟用狀態
+        };
 
         const response = await fetch(apiEndpoint, {
           method: "POST",
@@ -676,14 +730,39 @@ const InputArea = () => {
               const jsonStr = line.slice(6); // 移除 "data: " 前綴
               const data = JSON.parse(jsonStr);
 
-              if (data.type === "tool_calls") {
-                // 處理工具調用信息
+              if (data.type === "tool_call") {
+                // 處理單個工具調用信息
+                toolCallsInfo = [data.tool_call]; // 包裝成陣列以保持一致性
+                
+                console.log("收到工具調用信息:", data.tool_call);
+
+                // 更新消息顯示工具調用狀態
+                const statusText = data.tool_call.status === "completed" 
+                  ? "工具調用完成，正在生成回答..." 
+                  : "正在執行工具調用...";
+                
+                // 如果工具調用完成，重置累積內容為空，準備接收最終回答
+                if (data.tool_call.status === "completed") {
+                  accumulatedContent = "";
+                  console.log("工具調用完成，重置 accumulatedContent 準備接收最終回答");
+                }
+                
+                dispatch(
+                  updateMessage({
+                    chatId: currentChatId,
+                    messageId: assistantMessageId,
+                    content: statusText,
+                    isStreaming: true,
+                    toolCalls: toolCallsInfo,
+                  })
+                );
+              } else if (data.type === "tool_calls") {
+                // 處理多個工具調用信息（兼容舊格式）
                 toolCallsInfo = data.tool_calls;
                 usedToolsInfo = data.used_tools;
 
                 console.log("收到工具調用信息:", toolCallsInfo);
 
-                // 更新消息顯示工具調用狀態
                 dispatch(
                   updateMessage({
                     chatId: currentChatId,
@@ -696,7 +775,13 @@ const InputArea = () => {
                 );
               } else if (data.type === "content") {
                 // 處理內容更新
-                accumulatedContent += data.content;
+                const newContent = data.message?.content || data.content || "";
+                
+                // 過濾掉任何可能的工具調用標籤（作為額外保護）
+                const cleanContent = newContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
+                if (cleanContent) {
+                  accumulatedContent += cleanContent;
+                }
 
                 dispatch(
                   updateMessage({

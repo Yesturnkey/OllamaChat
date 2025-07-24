@@ -38,6 +38,7 @@ import {
   selectServer,
   toggleTool,
   clearError,
+  syncServerStatus,
 } from "@/app/redux/mcpSlice";
 import {
   setIsAddMCPServerDialogOpen,
@@ -176,6 +177,12 @@ const MCPToolsTab = () => {
     const scrollTop = e.target.scrollTop;
     setShowScrollToTop(scrollTop > 200);
   };
+
+  // 組件掛載時同步後端連接狀態
+  useEffect(() => {
+    console.log("[MCPToolsTab] 組件初始化，開始同步後端狀態");
+    dispatch(syncServerStatus());
+  }, []); // 只在組件掛載時執行一次
 
   // 組件掛載時，如果有服務器但沒有選中，則選中第一個
   useEffect(() => {
